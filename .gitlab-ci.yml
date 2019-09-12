@@ -1,0 +1,58 @@
+variables:
+  TF_VAR_AWS_ACCESS_KEY_ID: "$AWS_ACCESS_KEY_ID"
+  TF_VAR_AWS_SECRET_ACCESS_KEY: "$AWS_SECRET_ACCESS_KEY"
+
+stages:
+  - validate
+  - plan
+  - deploy
+
+validate:
+  stage: validate
+  image:
+    name: hashicorp/terraform:0.12.7
+    entrypoint: [""]
+  script:
+    - cd src
+    - terraform init -input=false
+    - terraform validate
+  artifacts:
+    paths:
+      - src/.terraform/
+
+plan:
+  stage: plan
+  image:
+    name: hashicorp/terraform:0.12.7
+    entrypoint: [""]
+  variables:
+    TF_VAR_CI_API_V4_URL: "$CI_API_V4_URL"
+    TF_VAR_CI_COMMIT_SHORT_SHA: "$CI_COMMIT_SHORT_SHA"
+    TF_VAR_GITLAB_TOKEN: "$GITLAB_TOKEN"
+    SSH_PUBLIC_KEY_NAME: "SSH_PUBLIC_KEY_$CI_COMMIT_SHORT_SHA"
+  script:
+    - apk add bash
+    - cd src
+    - bash -c 'if [ -z "${!SSH_PUBLIC_KEY_NAME}" ]; then terraform taint tls_private_key.ssh_key_pair || true; else echo SSH Key Already Exists; fi'
+    - terraform plan -out automation-root.plan
+  artifacts:
+    paths:
+      - src/automation-root.plan
+  only:
+    - master
+
+deploy:
+  stage: deploy
+  image:
+    name: hashicorp/terraform:0.12.7
+    entrypoint: [""]
+  variables:
+    TF_VAR_CI_API_V4_URL: "$CI_API_V4_URL"
+    TF_VAR_CI_COMMIT_SHORT_SHA: "$CI_COMMIT_SHORT_SHA"
+    TF_VAR_GITLAB_TOKEN: "$GITLAB_TOKEN"
+  script:
+    - apk add curl
+    - cd src
+    - terraform apply -auto-approve automation-root.plan
+  only:
+    - master
